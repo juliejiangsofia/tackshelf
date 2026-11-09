@@ -7,7 +7,7 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let line = Line()
+    private lazy var line = Line()
     private let phoneCamera = PhoneCameraCapture()
     private var pendingCameraLaunch = false
     private var panel: LinePanel!
@@ -67,8 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The preview is a background utility, so starting with the user's Mac
     /// is the useful default. An explicit menu opt-out is remembered.
     private static let launchAtLoginDisabledKey = "launchAtLoginDisabled"
+    private static let legacyDefaultsDomain = "local.feltboard.preview"
+    private static let defaultsMigrationKey = "tackShelfDefaultsMigrationV1"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.migrateLegacyDefaultsIfNeeded()
         panel = LinePanel(content: makeBoardHost())
         phoneCamera.onPhoto = { [weak self] url in
             guard let self else { return }
@@ -276,9 +279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func offerInbox() {
         Inbox.wasOffered = true
         let alert = NSAlert()
-        alert.messageText = L("Let Feltboard handle your screenshots?")
+        alert.messageText = L("Let TackShelf handle your screenshots?")
         alert.informativeText = L(
-            "Screenshots appear on Feltboard the instant you take them, without the floating thumbnail, and will not pile up on your Desktop. Drag one to a folder to keep it, or discard it with the cross. You can turn this off from the menu bar, and your settings come back when Feltboard quits.")
+            "Screenshots appear on TackShelf the instant you take them, without the floating thumbnail, and will not pile up on your Desktop. Drag one to a folder to keep it, or discard it with the cross. You can turn this off from the menu bar, and your settings come back when TackShelf quits.")
         alert.addButton(withTitle: L("Turn on"))
         alert.addButton(withTitle: L("Not now"))
         alert.icon = NSApp.applicationIconImage
@@ -675,7 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// glance that the clipboard is being watched.
     private func updateStatusIcon() {
         let on = ClipboardWatcher.isEnabled
-        let description = on ? "布贴板，正在收取剪贴板内容" : "布贴板"
+        let description = on ? "TackShelf，正在收取剪贴板内容" : "TackShelf"
         let image = NSImage(systemSymbolName: on ? "pin.fill" : "pin", accessibilityDescription: description)
         image?.isTemplate = true
         statusItem.button?.image = image
@@ -685,7 +688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let toggleItem = ClosureMenuItem(isRevealed ? "收起布贴板" : "展开布贴板") { [weak self] in
+        let toggleItem = ClosureMenuItem(isRevealed ? "收起 TackShelf" : "展开 TackShelf") { [weak self] in
             self?.toggle()
         }
         if let shortcut = Shortcut.current, shortcut.key.count == 1 {
@@ -814,7 +817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
 
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("退出布贴板", key: "q") {
+        menu.addItem(ClosureMenuItem("退出 TackShelf", key: "q") {
             NSApp.terminate(nil)
         })
     }
@@ -851,7 +854,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recordLaunchAtLoginStatus(error: error)
             let alert = NSAlert()
             alert.messageText = L("Could not change the login setting")
-            alert.informativeText = L("Move Feltboard to the Applications folder and try again.")
+            alert.informativeText = L("Move TackShelf to the Applications folder and try again.")
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
@@ -865,6 +868,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             defaults.removeObject(forKey: "launchAtLoginError")
         }
+    }
+
+    /// Preserve the user's history and preferences when the public app name
+    /// moves from the preview bundle identity to TackShelf.
+    private static func migrateLegacyDefaultsIfNeeded() {
+        let current = UserDefaults.standard
+        guard !current.bool(forKey: defaultsMigrationKey) else { return }
+        if let legacy = UserDefaults(suiteName: legacyDefaultsDomain),
+           let values = legacy.persistentDomain(forName: legacyDefaultsDomain) {
+            for (key, value) in values where current.object(forKey: key) == nil {
+                current.set(value, forKey: key)
+            }
+        }
+        current.set(true, forKey: defaultsMigrationKey)
     }
 
     // MARK: Quick Look

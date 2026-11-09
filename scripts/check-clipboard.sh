@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEVELOPER_PATH="$(xcode-select -p)"
-SDK_PATH="${FELTBOARD_SDK_PATH:-$DEVELOPER_PATH/SDKs/MacOSX.sdk}"
+SDK_PATH="${TACKSHELF_SDK_PATH:-$DEVELOPER_PATH/SDKs/MacOSX.sdk}"
 if [ ! -d "$SDK_PATH" ]; then
   SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 fi

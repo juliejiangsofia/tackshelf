@@ -9,9 +9,9 @@ private func require(_ condition: @autoclosure () throws -> Bool, _ message: Str
 
 @MainActor
 private final class Fixture {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("FeltboardContentChecks-\(UUID().uuidString)", isDirectory: true)
-    let suite = "local.feltboard.content-checks.\(UUID().uuidString)"
-    let pasteboard = NSPasteboard(name: .init("local.feltboard.content-checks.\(UUID().uuidString)"))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("TackShelfContentChecks-\(UUID().uuidString)", isDirectory: true)
+    let suite = "local.tackshelf.content-checks.\(UUID().uuidString)"
+    let pasteboard = NSPasteboard(name: .init("local.tackshelf.content-checks.\(UUID().uuidString)"))
     let defaults: UserDefaults
     let line: Line
 
@@ -93,7 +93,7 @@ private func runChecks() -> Int32 {
         try require(f.pasteboard.data(forType: .rtf) == rtf, "Copy lost RTF bytes")
         try require(f.pasteboard.data(forType: .html) == html, "Copy lost HTML bytes")
         try require(f.pasteboard.string(forType: .fileURL) == nil, "Private metadata path leaked into copied content")
-        try require(f.pasteboard.types?.contains(.init("local.feltboard.clipboard-owner")) == true,
+        try require(f.pasteboard.types?.contains(.init("local.tackshelf.clipboard-owner")) == true,
                     "Own-copy marker missing")
     }
 
@@ -123,7 +123,7 @@ private func runChecks() -> Int32 {
         try require(items.count == sources.count, "File batch was reduced to one file")
         try require(items.compactMap { $0.string(forType: .fileURL) } == sources.map(\.absoluteString),
                     "Copied file URLs changed or reordered")
-        try require(items.allSatisfy { $0.types.contains(.init("local.feltboard.clipboard-owner")) },
+        try require(items.allSatisfy { $0.types.contains(.init("local.tackshelf.clipboard-owner")) },
                     "One file in the copied batch lacks the own-copy marker")
         f.line.discard(id, quietly: true)
         try require(try Data(contentsOf: first) == Data("original file bytes".utf8), "Discard changed the first original")

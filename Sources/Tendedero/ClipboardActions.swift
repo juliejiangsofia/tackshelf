@@ -4,7 +4,7 @@ extension Pegged {
     /// Export the original content, never the app's private record file.
     @MainActor
     func pasteboardItems() -> [NSPasteboardItem] {
-        let owner = NSPasteboard.PasteboardType("local.feltboard.clipboard-owner")
+        let owner = NSPasteboard.PasteboardType("local.tackshelf.clipboard-owner")
         func entry() -> NSPasteboardItem {
             let item = NSPasteboardItem()
             item.setString("1", forType: owner)
@@ -81,7 +81,7 @@ final class ContentPreview {
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
                                   styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "布贴板 · 内容"
+            window.title = "TackShelf · 内容"
             window.isReleasedWhenClosed = false
             let scroll = NSScrollView(frame: window.contentView!.bounds)
             scroll.autoresizingMask = [.width, .height]

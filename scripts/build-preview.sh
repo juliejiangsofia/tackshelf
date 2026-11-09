@@ -3,10 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="build/FeltboardPreview.app"
-OUT=".build/felt-preview"
+APP="build/TackShelf.app"
+OUT=".build/tackshelf-preview"
 DEVELOPER_PATH="$(xcode-select -p)"
-SDK_PATH="${FELTBOARD_SDK_PATH:-$DEVELOPER_PATH/SDKs/MacOSX.sdk}"
+SDK_PATH="${TACKSHELF_SDK_PATH:-$DEVELOPER_PATH/SDKs/MacOSX.sdk}"
 if [ ! -d "$SDK_PATH" ]; then
   SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 fi
@@ -14,8 +14,8 @@ ARCH="$(uname -m)"
 mkdir -p "$OUT" "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 swiftc -sdk "$SDK_PATH" -target "$ARCH-apple-macosx14.0" \
-  -module-name Tendedero Sources/Tendedero/*.swift -o "$OUT/FeltboardPreview"
-cp "$OUT/FeltboardPreview" "$APP/Contents/MacOS/FeltboardPreview"
+  -module-name Tendedero Sources/Tendedero/*.swift -o "$OUT/TackShelf"
+cp "$OUT/TackShelf" "$APP/Contents/MacOS/TackShelf"
 
 # The system camera importer needs its own activating AppKit process because
 # the shelf intentionally never becomes a key window. Bundle the small local
@@ -31,13 +31,13 @@ cat > "$HELPER/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>布贴板拍照</string>
-  <key>CFBundleDisplayName</key><string>布贴板拍照</string>
-  <key>CFBundleIdentifier</key><string>local.feltboard.preview.phonecamera</string>
+  <key>CFBundleName</key><string>TackShelf Camera</string>
+  <key>CFBundleDisplayName</key><string>TackShelf Camera</string>
+  <key>CFBundleIdentifier</key><string>local.tackshelf.preview.phonecamera</string>
   <key>CFBundleExecutable</key><string>PhoneCameraCapture</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2.16</string>
-  <key>CFBundleVersion</key><string>20</string>
+  <key>CFBundleShortVersionString</key><string>0.2.17</string>
+  <key>CFBundleVersion</key><string>21</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
@@ -49,14 +49,14 @@ codesign --force --sign - "$HELPER"
 
 swiftc -sdk "$SDK_PATH" scripts/make-preview-icon.swift -o "$OUT/make-preview-icon"
 "$OUT/make-preview-icon" "$OUT/preview-icon.png"
-ICONSET="$OUT/FeltboardPreview.iconset"
+ICONSET="$OUT/TackShelf.iconset"
 mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do
   sips -z "$s" "$s" "$OUT/preview-icon.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
   double=$((s * 2))
   sips -z "$double" "$double" "$OUT/preview-icon.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/FeltboardPreview.icns"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/TackShelf.icns"
 
 for directory in Sources/Tendedero/Resources/*.lproj; do
   cp -R "$directory" "$APP/Contents/Resources/"
@@ -70,21 +70,21 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>布贴板 Preview</string>
-  <key>CFBundleDisplayName</key><string>布贴板 Preview</string>
-  <key>CFBundleIdentifier</key><string>local.feltboard.preview</string>
-  <key>CFBundleExecutable</key><string>FeltboardPreview</string>
-  <key>CFBundleIconFile</key><string>FeltboardPreview</string>
+  <key>CFBundleName</key><string>TackShelf</string>
+  <key>CFBundleDisplayName</key><string>TackShelf</string>
+  <key>CFBundleIdentifier</key><string>local.tackshelf.preview</string>
+  <key>CFBundleExecutable</key><string>TackShelf</string>
+  <key>CFBundleIconFile</key><string>TackShelf</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2.16</string>
-  <key>CFBundleVersion</key><string>20</string>
+  <key>CFBundleShortVersionString</key><string>0.2.17</string>
+  <key>CFBundleVersion</key><string>21</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>CFBundleURLTypes</key><array><dict>
-    <key>CFBundleURLName</key><string>local.feltboard.preview.camera</string>
-    <key>CFBundleURLSchemes</key><array><string>feltboard-preview</string></array>
+    <key>CFBundleURLName</key><string>local.tackshelf.preview.camera</string>
+    <key>CFBundleURLSchemes</key><array><string>tackshelf</string></array>
     <key>CFBundleTypeRole</key><string>Viewer</string>
   </dict></array>
   <key>NSHighResolutionCapable</key><true/>

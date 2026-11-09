@@ -36,6 +36,8 @@ enum Inbox {
 
     static let folder: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // Keep the preview-era storage path so existing history and macOS
+        // screenshot settings remain valid after the public TackShelf rename.
         return base.appendingPathComponent("FeltboardPreview/Screenshots", isDirectory: true)
     }()
 

@@ -118,12 +118,12 @@ private func runChecks() -> Int32 {
         try (bytes as Data).write(to: jpeg)
         let saved = try PhoneCameraCapture.importPhoto(from: jpeg, staging: stage,
                                                        destination: dest, requestID: UUID())
-        let pb = NSPasteboard(name: .init("local.feltboard.phone-checks.\(UUID().uuidString)"))
+        let pb = NSPasteboard(name: .init("local.tackshelf.phone-checks.\(UUID().uuidString)"))
         defer { pb.releaseGlobally() }
         try require(PhoneCameraCapture.copyPhoto(saved, to: pb), "Photo was not copied")
         try require(pb.pasteboardItems?.count == 1, "Copy created multiple attachments")
         try require(pb.string(forType: .fileURL) == nil, "Copy offers a file URL instead of an image")
-        try require(pb.string(forType: .init("local.feltboard.clipboard-owner")) == "1", "Missing collection-loop marker")
+        try require(pb.string(forType: .init("local.tackshelf.clipboard-owner")) == "1", "Missing collection-loop marker")
         for type in [NSPasteboard.PasteboardType.png, .tiff] {
             guard let data = pb.data(forType: type), let bitmap = NSBitmapImageRep(data: data) else {
                 throw Failure(description: "Missing readable \(type.rawValue)")
@@ -137,7 +137,7 @@ private func runChecks() -> Int32 {
     check("a failed photo copy preserves the previous clipboard") { folder, _, _ in
         let broken = folder.appendingPathComponent("broken.jpg")
         try Data("invalid camera data".utf8).write(to: broken)
-        let pb = NSPasteboard(name: .init("local.feltboard.phone-checks.\(UUID().uuidString)"))
+        let pb = NSPasteboard(name: .init("local.tackshelf.phone-checks.\(UUID().uuidString)"))
         defer { pb.releaseGlobally() }
         pb.clearContents()
         pb.setString("previous copy", forType: .string)
@@ -148,12 +148,12 @@ private func runChecks() -> Int32 {
     }
 
     check("camera shortcut only accepts its fixed local command") { _, _, _ in
-        for address in ["feltboard-preview://camera", "FELTBOARD-PREVIEW://CAMERA/"] {
+        for address in ["tackshelf://camera", "TACKSHELF://CAMERA/"] {
             try require(PhoneCameraCapture.isLaunchURL(URL(string: address)!), "Shortcut was rejected")
         }
-        for address in ["https://camera", "feltboard-preview://other", "feltboard-preview://camera/other",
-                        "feltboard-preview://camera?file=/tmp/photo.jpg", "feltboard-preview://camera#data",
-                        "feltboard-preview://user@camera", "feltboard-preview://camera:80"] {
+        for address in ["https://camera", "tackshelf://other", "tackshelf://camera/other",
+                        "tackshelf://camera?file=/tmp/photo.jpg", "tackshelf://camera#data",
+                        "tackshelf://user@camera", "tackshelf://camera:80"] {
             try require(!PhoneCameraCapture.isLaunchURL(URL(string: address)!), "Unexpected camera command accepted")
         }
     }

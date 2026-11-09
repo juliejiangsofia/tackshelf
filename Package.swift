@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Feltboard",
+    name: "TackShelf",
     platforms: [.macOS(.v14)],
     targets: [
         // Resources holds the translations. scripts/build-app.sh copies them

@@ -3,7 +3,7 @@ import AVFoundation
 import Combine
 import os
 
-let log = Logger(subsystem: "local.feltboard.preview", category: "line")
+let log = Logger(subsystem: "local.tackshelf.preview", category: "line")
 
 /// One screenshot hanging on the line.
 struct Pegged: Identifiable, Equatable {

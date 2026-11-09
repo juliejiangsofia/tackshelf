@@ -8,7 +8,7 @@ import ImageIO
 @MainActor
 final class PhoneCameraCapture: ObservableObject {
     static func isLaunchURL(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "feltboard-preview"
+        url.scheme?.lowercased() == "tackshelf"
             && url.host?.lowercased() == "camera"
             && (url.path.isEmpty || url.path == "/")
             && url.user == nil && url.password == nil && url.port == nil
@@ -55,13 +55,13 @@ final class PhoneCameraCapture: ObservableObject {
     func takePhoto() {
         guard !isCapturing else { return }
         guard FileManager.default.fileExists(atPath: helperURL.appendingPathComponent("Contents/MacOS/PhoneCameraCapture").path) else {
-            showMessage("拍照组件未安装，请重新构建布贴板")
+            showMessage("拍照组件未安装，请重新构建 TackShelf")
             return
         }
 
         let id = UUID()
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("FeltboardPreview/CameraRequests", isDirectory: true)
+            .appendingPathComponent("TackShelf/CameraRequests", isDirectory: true)
         let directory = base.appendingPathComponent(id.uuidString, isDirectory: true)
         let staging = directory.appendingPathComponent("Photo", isDirectory: true)
         do {
@@ -92,7 +92,7 @@ final class PhoneCameraCapture: ObservableObject {
     private func launch(_ job: Request) {
         guard request?.id == job.id else { return }
         let id = job.id
-        NSApp.yieldActivation(toApplicationWithBundleIdentifier: "local.feltboard.preview.phonecamera")
+        NSApp.yieldActivation(toApplicationWithBundleIdentifier: "local.tackshelf.preview.phonecamera")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
         configuration.activates = true
@@ -226,7 +226,7 @@ final class PhoneCameraCapture: ObservableObject {
               let tiff = bitmap.representation(using: .tiff, properties: [:]) else { return false }
         let item = NSPasteboardItem()
         guard item.setData(png, forType: .png), item.setData(tiff, forType: .tiff),
-              item.setString("1", forType: .init("local.feltboard.clipboard-owner")) else { return false }
+              item.setString("1", forType: .init("local.tackshelf.clipboard-owner")) else { return false }
         pasteboard.clearContents()
         return pasteboard.writeObjects([item])
     }

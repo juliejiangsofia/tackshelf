@@ -90,8 +90,8 @@ private final class Fixture {
         var events: [ImportedContent] = []
         var urls: [URL] { events.map(\.url) }
     }
-    let pasteboard = NSPasteboard(name: .init("local.feltboard.clipboard-checks.\(UUID().uuidString)"))
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("FeltboardClipboardChecks-\(UUID().uuidString)", isDirectory: true)
+    let pasteboard = NSPasteboard(name: .init("local.tackshelf.clipboard-checks.\(UUID().uuidString)"))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("TackShelfClipboardChecks-\(UUID().uuidString)", isDirectory: true)
     let received = Received()
     let watcher: ClipboardWatcher
     var output: URL { root.appendingPathComponent("output", isDirectory: true) }
@@ -445,7 +445,7 @@ private func runChecks() -> Int32 {
     }
 
     check("plain text preserves Unicode, leading spaces and line endings") { f in
-        let original = "  布贴板 👨‍👩‍👧‍👦\r\n第二行\tlet value = 1\n\n"
+        let original = "  TackShelf 👨‍👩‍👧‍👦\r\n第二行\tlet value = 1\n\n"
         try f.copy(strings: [.string: original])
         f.watcher.requestImport()
         try waitFor("Unicode text") { f.received.urls.count == 1 }
@@ -593,7 +593,7 @@ private func runChecks() -> Int32 {
     }
 
     check("copying our own content does not collect it again") { f in
-        try f.copy(data: [.png: image((20, 50, 70)), .init("local.feltboard.clipboard-owner"): Data("1".utf8)],
+        try f.copy(data: [.png: image((20, 50, 70)), .init("local.tackshelf.clipboard-owner"): Data("1".utf8)],
                    strings: [.string: "own copied text"])
         f.watcher.requestImport()
         try f.requireNoImport("Own clipboard write created another history entry")

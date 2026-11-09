@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SOURCE="build/FeltboardPreview.app"
-DESTINATION="${FELTBOARD_INSTALL_PATH:-$HOME/Applications/FeltboardPreview.app}"
+SOURCE="build/TackShelf.app"
+DESTINATION="${TACKSHELF_INSTALL_PATH:-$HOME/Applications/TackShelf.app}"
 STAGING="${DESTINATION}.updating"
 
 if [ ! -d "$SOURCE" ]; then
