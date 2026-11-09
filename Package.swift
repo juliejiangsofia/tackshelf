@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tendedero",
+    name: "Feltboard",
     platforms: [.macOS(.v14)],
     targets: [
         // Resources holds the translations. scripts/build-app.sh copies them

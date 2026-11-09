@@ -1,0 +1,13 @@
+PhoneCameraCapture incorporates and adapts ContinuityCapture's AppKit
+Continuity Camera menu trigger, key-window NSTextView receiver, and attachment
+extraction code.
+
+Original project: https://github.com/techjuicelab/continuity-capture
+Original revision: bd20af2dbc825c1f354dcdcd60642c9d250df670
+Copyright (c) 2026 TechJuiceLab. Licensed under MIT; see LICENSE.
+
+The previously verified local macOS 15.1 lab supplied the working launch/menu
+ordering. This adaptation removes Sparkle, clipboard writes, auto-paste,
+context-menu automation, scanning, and window-list inspection. It adds a
+single-photo JSON result protocol, strict device selection, Chinese menu
+titles, bounded ImageIO validation, and private local files.

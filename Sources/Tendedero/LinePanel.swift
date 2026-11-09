@@ -1,6 +1,6 @@
 import AppKit
 
-/// A transparent strip along the top of the screen that floats over every
+/// A compact board centred below the menu bar that floats over every
 /// app and every Space except full screen ones, never takes focus, and lets clicks pass through
 /// everywhere except over the photos.
 final class LinePanel: NSPanel {
@@ -21,7 +21,7 @@ final class LinePanel: NSPanel {
         contentView = content
     }
 
-    /// Two-finger swipes and the scroll wheel, for moving along a long line.
+    /// Two-finger swipes and the scroll wheel, for moving through card rows.
     var onScroll: ((NSEvent) -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
@@ -45,8 +45,9 @@ final class LinePanel: NSPanel {
 
     func placeOnScreen(_ screen: NSScreen? = nil) {
         guard let visible = (screen ?? LinePanel.screenUnderPointer())?.visibleFrame else { return }
-        let target = NSRect(x: visible.minX, y: visible.maxY - Layout.panelHeight,
-                            width: visible.width, height: Layout.panelHeight)
+        let size = Layout.panelSize(available: visible.size)
+        let target = NSRect(x: visible.midX - size.width / 2, y: visible.maxY - size.height,
+                            width: size.width, height: size.height)
         if frame != target { setFrame(target, display: true) }
     }
 }

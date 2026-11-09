@@ -1,34 +1,17 @@
-MIT License
+Feltboard License Notice
 
-Copyright (c) 2026 Alejandro Buján
+Required Notice: Copyright 2026 juliejiangsofia
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The original Feltboard modifications, visual design, documentation, and new
+assets in this repository are licensed under the PolyForm Noncommercial
+License 1.0.0:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+https://polyformproject.org/licenses/noncommercial/1.0.0
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Commercial use of that Feltboard-specific work is not permitted without
+separate written permission from the copyright holder.
 
----
-
-Name and icon
-
-The MIT License above covers the source code. It does not grant any rights
-to the Tendedero name or the Tendedero icon, including the icon artwork drawn
-by scripts/make-icon.swift and the images in the docs folder.
-
-You may build and use the app as published, and you may refer to Tendedero
-to say where your work comes from. Modified or redistributed versions must
-use a different name and a different icon, and must not suggest that they
-are Tendedero or are endorsed by its author.
+This repository is derived from third-party MIT-licensed work. Those upstream
+portions keep their original licenses and commercial-use permissions; this
+notice does not revoke or narrow rights already granted by their authors.
+See THIRD_PARTY_NOTICES.md and the files in LICENSES/ for details.

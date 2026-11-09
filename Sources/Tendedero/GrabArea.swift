@@ -30,6 +30,11 @@ struct GrabArea: NSViewRepresentable {
         let isRecording = item.isRecording
         view.url = item.url
         view.dragImage = item.thumb
+        view.dragWriters = {
+            if item.content == nil { return [item.url as NSURL] }
+            return item.pasteboardItems()
+        }
+        view.allowsFileMove = item.content == nil
         view.onClick = { line.copy(id) }
         view.onDoubleClick = { line.open(id) }
         view.onDragStart = { line.draggingID = id }
@@ -50,12 +55,14 @@ struct GrabArea: NSViewRepresentable {
             menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
             menu.addItem(ClosureMenuItem(L("Open")) { line.open(id) })
             menu.addItem(ClosureMenuItem(L("Quick Look")) { line.quickLook(id) })
-            if !isRecording {
+            if item.content == nil && !isRecording {
                 menu.addItem(ClosureMenuItem(L("Markup")) { line.markup(id) })
             }
-            menu.addItem(ClosureMenuItem(L("Show in Finder")) { line.reveal(id) })
+            if item.content == nil || item.content?.kind == .files {
+                menu.addItem(ClosureMenuItem(L("Show in Finder")) { line.reveal(id) })
+            }
             let inInbox = line.isInInbox(id)
-            if inInbox {
+            if inInbox && item.content == nil {
                 menu.addItem(ClosureMenuItem(L("Save to Desktop")) { line.saveToDesktop(id) })
             }
             menu.addItem(.separator())
@@ -65,10 +72,10 @@ struct GrabArea: NSViewRepresentable {
                 menu.addItem(ClosureMenuItem(L("Take down")) { line.discard(id) })
                 menu.addItem(ClosureMenuItem(L("Move to Trash")) { line.trash(id) })
             }
-            let left = ClosureMenuItem(L("Take down everything to the left")) { line.takeDown(id, toTheLeft: true) }
+            let left = ClosureMenuItem("取下更早的内容") { line.takeDown(id, toTheLeft: true) }
             left.isEnabled = !line.neighbours(of: id, toTheLeft: true).isEmpty
             menu.addItem(left)
-            let right = ClosureMenuItem(L("Take down everything to the right")) { line.takeDown(id, toTheLeft: false) }
+            let right = ClosureMenuItem("取下更新的内容") { line.takeDown(id, toTheLeft: false) }
             right.isEnabled = !line.neighbours(of: id, toTheLeft: false).isEmpty
             menu.addItem(right)
             return menu
@@ -83,16 +90,18 @@ final class GrabView: NSView, NSDraggingSource {
 
     var url: URL?
     var dragImage: NSImage?
-    var onClick: () -> Void = {}
-    var onDoubleClick: () -> Void = {}
-    var onDragStart: () -> Void = {}
-    var onDragEnd: () -> Void = {}
-    var onTrash: () -> Void = {}
-    var onDiscard: () -> Void = {}
-    var onLongPress: () -> Void = {}
-    var onForceClick: () -> Void = {}
-    var onPressChange: (Bool) -> Void = { _ in }
-    var menuProvider: () -> NSMenu = { NSMenu() }
+    var dragWriters: @MainActor () -> [NSPasteboardWriting] = { [] }
+    var allowsFileMove = true
+    var onClick: @MainActor () -> Void = {}
+    var onDoubleClick: @MainActor () -> Void = {}
+    var onDragStart: @MainActor () -> Void = {}
+    var onDragEnd: @MainActor () -> Void = {}
+    var onTrash: @MainActor () -> Void = {}
+    var onDiscard: @MainActor () -> Void = {}
+    var onLongPress: @MainActor () -> Void = {}
+    var onForceClick: @MainActor () -> Void = {}
+    var onPressChange: @MainActor (Bool) -> Void = { _ in }
+    var menuProvider: @MainActor () -> NSMenu = { NSMenu() }
 
     private var downPoint: NSPoint?
     private var startedDrag = false
@@ -158,15 +167,20 @@ final class GrabView: NSView, NSDraggingSource {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = downPoint, !startedDrag, let url else { return }
+        guard let start = downPoint, !startedDrag else { return }
         let p = event.locationInWindow
         guard hypot(p.x - start.x, p.y - start.y) > 4, !didLongPress else { return }
+        let writers = dragWriters()
+        guard !writers.isEmpty else { return }
         startedDrag = true
         endPress()
 
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-        item.setDraggingFrame(imageFrame(), contents: dragImage)
-        let session = beginDraggingSession(with: [item], event: event, source: self)
+        let dragged = writers.enumerated().map { index, writer in
+            let item = NSDraggingItem(pasteboardWriter: writer)
+            item.setDraggingFrame(imageFrame().offsetBy(dx: CGFloat(index) * 3, dy: CGFloat(index) * 3), contents: dragImage)
+            return item
+        }
+        let session = beginDraggingSession(with: dragged, event: event, source: self)
         // Released where nothing accepts it: it flies back to the line.
         session.animatesToStartingPositionsOnCancelOrFail = true
         GrabView.isDragging = true
@@ -193,7 +207,7 @@ final class GrabView: NSView, NSDraggingSource {
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         // Apps pick copy. Finder picks move, so a folder or the Desktop keeps
         // the file. Delete is what lets the Dock's Trash accept it.
-        context == .outsideApplication ? [.copy, .move, .delete] : []
+        context == .outsideApplication ? (allowsFileMove ? [.copy, .move, .delete] : [.copy]) : []
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
@@ -226,9 +240,9 @@ final class GrabView: NSView, NSDraggingSource {
 }
 
 final class ClosureMenuItem: NSMenuItem {
-    private let handler: () -> Void
+    private let handler: @MainActor () -> Void
 
-    init(_ title: String, key: String = "", handler: @escaping () -> Void) {
+    init(_ title: String, key: String = "", handler: @escaping @MainActor () -> Void) {
         self.handler = handler
         super.init(title: title, action: #selector(fire), keyEquivalent: key)
         target = self
@@ -236,5 +250,5 @@ final class ClosureMenuItem: NSMenuItem {
 
     required init(coder: NSCoder) { fatalError() }
 
-    @objc private func fire() { handler() }
+    @MainActor @objc private func fire() { handler() }
 }

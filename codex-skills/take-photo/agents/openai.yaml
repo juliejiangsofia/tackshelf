@@ -1,0 +1,4 @@
+interface:
+  display_name: "拍照"
+  short_description: "唤起 iPhone 拍照，确认后复制到 Mac 剪贴板，再按 ⌘V 粘贴"
+  default_prompt: "使用 $take-photo 唤起我的 iPhone 拍一张照片，并复制到 Mac 剪贴板。"

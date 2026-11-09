@@ -25,7 +25,7 @@ func captureRect(of url: URL) -> CGRect? {
 
 /// The capture lifting off the screen and flying up to the line. It turns
 /// into the hanging card on the way: it shrinks, tilts into place and grows
-/// its glass frame and clip, so there is nothing left to change on landing.
+/// its paper border and coloured button, so there is nothing left to change on landing.
 @MainActor
 final class CaptureFlight {
     static let duration: CFTimeInterval = 0.65
@@ -34,11 +34,11 @@ final class CaptureFlight {
 
     private let window: NSWindow
     private let container = CALayer()
-    private let glass = CALayer()
+    private let paper = CALayer()
     private let edge = CAGradientLayer()
     private let edgeMask = CAShapeLayer()
     private let photo = CALayer()
-    private let clip = CAGradientLayer()
+    private let pin = CALayer()
 
     private let from: CGRect
     private let to: CGRect
@@ -59,9 +59,11 @@ final class CaptureFlight {
     ///   - from: the captured area, in screen coordinates.
     ///   - to: the card's frame on the line, in screen coordinates, unrotated.
     ///   - tilt: the card's resting tilt in degrees, clockwise, as SwiftUI uses.
-    static func fly(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat, on screen: NSScreen,
+    static func fly(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat,
+                    buttonColourIndex: Int, on screen: NSScreen,
                     completion: @escaping () -> Void) {
-        let flight = CaptureFlight(image: image, from: from, to: to, tilt: tilt, screen: screen)
+        let flight = CaptureFlight(image: image, from: from, to: to, tilt: tilt,
+                                   buttonColourIndex: buttonColourIndex, screen: screen)
         current.append(flight)
         flight.completion = { [weak flight] in
             completion()
@@ -73,8 +75,10 @@ final class CaptureFlight {
     /// A discarded card falling off the line, drawn over the whole screen so
     /// it is never cut by the line's strip. Same motion as the app always had:
     /// 520 points down, tilting further, fading, 0.55 s ease in.
-    static func fall(image: CGImage, card: CGRect, tilt: CGFloat, on screen: NSScreen) {
-        let flight = CaptureFlight(image: image, from: card, to: card, tilt: tilt, screen: screen)
+    static func fall(image: CGImage, card: CGRect, tilt: CGFloat,
+                     buttonColourIndex: Int, on screen: NSScreen) {
+        let flight = CaptureFlight(image: image, from: card, to: card, tilt: tilt,
+                                   buttonColourIndex: buttonColourIndex, screen: screen)
         flight.falling = true
         flight.duration = 0.55
         current.append(flight)
@@ -82,7 +86,8 @@ final class CaptureFlight {
         flight.run()
     }
 
-    private init(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat, screen: NSScreen) {
+    private init(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat,
+                 buttonColourIndex: Int, screen: NSScreen) {
         self.from = from
         self.to = to
         self.tilt = tilt
@@ -106,12 +111,12 @@ final class CaptureFlight {
         container.shadowRadius = 10
         container.shadowOffset = CGSize(width: 0, height: -5)
 
-        glass.backgroundColor = NSColor(white: 0.97, alpha: 0.72).cgColor
-        edge.colors = [NSColor(white: 1, alpha: 0.9).cgColor, NSColor(white: 1, alpha: 0.25).cgColor]
+        paper.backgroundColor = NSColor(red: 0.99, green: 0.985, blue: 0.965, alpha: 1).cgColor
+        edge.colors = [NSColor(white: 1, alpha: 0.9).cgColor, NSColor(red: 0.70, green: 0.67, blue: 0.59, alpha: 0.32).cgColor]
         edge.startPoint = CGPoint(x: 0.5, y: 1); edge.endPoint = CGPoint(x: 0.5, y: 0)
         edgeMask.fillColor = nil
         edgeMask.strokeColor = NSColor.black.cgColor
-        edgeMask.lineWidth = 1.5
+        edgeMask.lineWidth = 0.6
         edge.mask = edgeMask
 
         photo.contents = image
@@ -119,19 +124,16 @@ final class CaptureFlight {
         photo.masksToBounds = true
         photo.contentsScale = scale
 
-        clip.colors = [NSColor(white: 0.70, alpha: 1).cgColor, NSColor(white: 0.93, alpha: 1).cgColor,
-                       NSColor(white: 0.82, alpha: 1).cgColor, NSColor(white: 0.62, alpha: 1).cgColor]
-        clip.locations = [0, 0.35, 0.65, 1]
-        clip.startPoint = CGPoint(x: 0, y: 0.5); clip.endPoint = CGPoint(x: 1, y: 0.5)
-        clip.cornerRadius = 3.5
-        clip.borderColor = NSColor(white: 1, alpha: 0.7).cgColor
-        clip.borderWidth = 0.6
+        // Share the resting card's rendered artwork, including its own shadows.
+        // CALayer displays the CGImage upright without an additional Y flip.
+        pin.contents = ButtonArtwork.image(at: buttonColourIndex)
+        pin.contentsGravity = .resizeAspect
 
-        for layer in [container, glass, edge, photo, clip] as [CALayer] { layer.contentsScale = scale }
-        container.addSublayer(glass)
+        for layer in [container, paper, edge, photo, pin] as [CALayer] { layer.contentsScale = scale }
+        container.addSublayer(paper)
         container.addSublayer(photo)
         container.addSublayer(edge)
-        container.addSublayer(clip)
+        container.addSublayer(pin)
         host.layer?.addSublayer(container)
     }
 
@@ -196,8 +198,9 @@ final class CaptureFlight {
         let w = lerp(from.width, to.width), h = lerp(from.height, to.height)
         let topX = lerp(from.midX, to.midX) - origin.x
         let topY = lerp(from.maxY, to.maxY) - origin.y + sin(.pi * k) * Self.arc
-        let inset = 4 * k
-        let radius = lerp(0, 16)
+        let inset = Frame.inset * k
+        let bottomInset = Frame.bottomInset * k
+        let radius = Frame.radius * k
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -207,18 +210,22 @@ final class CaptureFlight {
         container.setAffineTransform(CGAffineTransform(rotationAngle: -tilt * .pi / 180 * k))
         container.shadowPath = CGPath(roundedRect: container.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
 
-        glass.frame = container.bounds
-        glass.cornerRadius = radius
-        glass.opacity = chrome
+        paper.frame = container.bounds
+        paper.cornerRadius = radius
+        paper.opacity = chrome
         edge.frame = container.bounds
-        edgeMask.path = CGPath(roundedRect: container.bounds.insetBy(dx: 0.75, dy: 0.75),
-                               cornerWidth: max(0, radius - 0.75), cornerHeight: max(0, radius - 0.75), transform: nil)
+        edgeMask.path = CGPath(roundedRect: container.bounds.insetBy(dx: 0.3, dy: 0.3),
+                               cornerWidth: max(0, radius - 0.3), cornerHeight: max(0, radius - 0.3), transform: nil)
         edge.opacity = chrome
-        photo.frame = container.bounds.insetBy(dx: inset, dy: inset)
-        photo.cornerRadius = max(0, radius - inset)
-        // The clip grips the top edge: 26 points tall, 12 of them over the card.
-        clip.frame = CGRect(x: w / 2 - 4.5, y: h - 12, width: 9, height: 26)
-        clip.opacity = chrome
+        photo.frame = CGRect(x: inset, y: bottomInset,
+                             width: max(0, w - inset * 2), height: max(0, h - inset - bottomInset))
+        photo.cornerRadius = 0.3 * k
+        // Center the head on the paper's top edge; preserve shadow room equally
+        // around it so the flight and the resting SwiftUI card align on landing.
+        let pinSize = ButtonArtwork.diameter + 2 * ButtonArtwork.shadowPadding
+        pin.frame = CGRect(x: (w - pinSize) / 2, y: h - pinSize / 2,
+                           width: pinSize, height: pinSize)
+        pin.opacity = chrome
         CATransaction.commit()
     }
 }

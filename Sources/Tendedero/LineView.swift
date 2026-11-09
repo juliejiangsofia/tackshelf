@@ -1,13 +1,12 @@
 import SwiftUI
 
 enum Layout {
-    /// How big the photos hang, from Size in the menu bar. The clip, the rope
-    /// and the glass frame keep their size; the photos and the room they take
-    /// grow or shrink. Medium is the original size.
+    /// Photo size from the menu bar. The wood frame and buttons keep their size;
+    /// photos and the room they take grow or shrink together.
     enum Size: String, CaseIterable {
         case small, medium, large
 
-        var scale: CGFloat {
+        nonisolated var scale: CGFloat {
             switch self {
             case .small: 0.8
             case .medium: 1
@@ -16,125 +15,199 @@ enum Layout {
         }
     }
 
-    static var size: Size {
+    nonisolated static var size: Size {
         get { Size(rawValue: UserDefaults.standard.string(forKey: "lineSize") ?? "") ?? .medium }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "lineSize") }
     }
 
-    static var photoMaxHeight: CGFloat { (104 * size.scale).rounded() }
-    static var cardWidth: CGFloat { (150 * size.scale).rounded() }
-    static var spacing: CGFloat { cardWidth + 24 }
-    static var panelHeight: CGFloat { photoMaxHeight + 106 }
-    static let ropeTop: CGFloat = 10
-    static let pinAbove: CGFloat = 9.5
+    nonisolated static var photoMaxHeight: CGFloat { (136 * size.scale).rounded() }
+    nonisolated static var cardWidth: CGFloat { (172 * size.scale).rounded() }
+    nonisolated static let cardGap: CGFloat = 20
+    nonisolated static let rowGap: CGFloat = 30
+    nonisolated static let sideInset: CGFloat = 40
+    nonisolated static let headerHeight: CGFloat = 40
+    nonisolated static let bottomInset: CGFloat = 42
+    nonisolated static let shadowInset: CGFloat = 12
 
-    /// The rope hangs as a parabola from edge to edge of the screen.
-    static func sag(width: CGFloat) -> CGFloat { min(30, width * 0.018) }
-
-    static func ropeY(x: CGFloat, width: CGFloat) -> CGFloat {
-        guard width > 0 else { return ropeTop }
-        let f = x / width
-        return ropeTop + 4 * sag(width: width) * f * (1 - f)
+    /// A compact, centred board. Smaller displays keep the same 3:2 shape.
+    nonisolated static func panelSize(available: CGSize) -> CGSize {
+        let width = min(840, max(0, available.width - 32), max(0, available.height - 20) * 1.5)
+        return CGSize(width: width, height: width / 1.5)
     }
 
-    /// Photos hang `spacing` apart, centred. When there are more than the
-    /// `visible` that fit: with Keep on line set, they keep their spacing,
-    /// the newest stays where the last one would hang on a full line, and
-    /// `scroll` brings older ones in from the left. Otherwise (a line hung
-    /// on a wider screen) they move closer together so none is past the edge.
-    static func x(index: Int, count: Int, width: CGFloat, visible: Int, scroll: CGFloat) -> CGFloat {
-        if Line.keepOnLine != nil && count > visible {
-            let newest = width / 2 + CGFloat(visible - 1) * spacing / 2
-            return newest - CGFloat(count - 1 - index) * spacing + scroll
+    /// Cards fill the board, including the space beside the floating camera.
+    nonisolated static func cardViewport(for size: CGSize) -> CGRect {
+        CGRect(x: sideInset, y: headerHeight,
+               width: max(0, size.width - sideInset * 2),
+               height: max(0, size.height - headerHeight - bottomInset))
+    }
+
+    nonisolated static func cameraFrame(for size: CGSize) -> CGRect {
+        CGRect(x: size.width - 134, y: size.height - 100, width: 94, height: 74)
+    }
+
+    /// Paper frames use top-origin panel coordinates. Newer items read from
+    /// left to right, then wrap naturally without stretching the gaps.
+    @MainActor
+    static func frames(items: [Pegged], width: CGFloat) -> [UUID: CGRect] {
+        let availableWidth = max(0, width - sideInset * 2)
+        var result: [UUID: CGRect] = [:]
+        var x = sideInset
+        var rowTop = headerHeight
+        var rowHeight: CGFloat = 0
+        for item in items.reversed() where !item.falling {
+            let size = PeggedView.cardSize(for: item)
+            if x > sideInset && x + size.width > sideInset + availableWidth {
+                x = sideInset
+                rowTop += rowHeight + rowGap
+                rowHeight = 0
+            }
+            result[item.id] = CGRect(x: x, y: rowTop + PeggedView.cardOffsetBelowTop,
+                                     width: size.width, height: size.height)
+            x += size.width + cardGap
+            rowHeight = max(rowHeight, size.height + PeggedView.cardOffsetBelowTop)
         }
-        let gaps = CGFloat(max(count - 1, 0))
-        let step = gaps > 0 ? min(spacing, max(0, width - 200) / gaps) : spacing
-        return width / 2 - gaps * step / 2 + CGFloat(index) * step
+        return result
+    }
+
+    @MainActor
+    static func contentHeight(items: [Pegged], width: CGFloat) -> CGFloat {
+        guard let bottom = frames(items: items, width: width).values.map(\.maxY).max() else { return 0 }
+        return bottom - headerHeight + shadowInset
+    }
+
+    @MainActor
+    static func maximumScroll(items: [Pegged], width: CGFloat, height: CGFloat) -> CGFloat {
+        let size = CGSize(width: width, height: height)
+        let viewport = cardViewport(for: size)
+        let camera = cameraFrame(for: size)
+        let papers = frames(items: items, width: width).values
+        guard let bottom = papers.map(\.maxY).max() else { return 0 }
+        let normalScroll = max(0, bottom + shadowInset - viewport.maxY)
+        // Only cards in the camera's column need extra travel. This lets the
+        // oldest paper scroll above the button without reserving a footer.
+        let cameraScroll = papers
+            .filter { $0.maxX > camera.minX && $0.minX < camera.maxX }
+            .map { $0.maxY + shadowInset - camera.minY }
+            .max() ?? 0
+        return max(normalScroll, cameraScroll)
+    }
+
+    @MainActor
+    static func frame(for id: UUID, items: [Pegged], width: CGFloat, height: CGFloat,
+                      scroll: CGFloat) -> CGRect? {
+        guard let frame = frames(items: items, width: width)[id] else { return nil }
+        let offset = min(maximumScroll(items: items, width: width, height: height), max(0, scroll))
+        return frame.offsetBy(dx: 0, dy: -offset)
     }
 }
 
+@MainActor
 struct LineView: View {
     @ObservedObject var line: Line
+    @ObservedObject var camera: PhoneCameraCapture
+
+    private let ink = Color(red: 0.36, green: 0.31, blue: 0.24)
 
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
+            let height = geo.size.height
+            let viewport = Layout.cardViewport(for: geo.size)
+            let cameraFrame = Layout.cameraFrame(for: geo.size)
+            // Small paint bleed keeps tilted paper edges and button shadows intact.
+            let clipViewport = viewport.insetBy(dx: -8, dy: -8)
+            let maximumScroll = Layout.maximumScroll(items: line.items, width: width, height: height)
+            let scroll = min(maximumScroll, max(0, line.scroll))
+            let frames = Layout.frames(items: line.items, width: width)
             ZStack(alignment: .topLeading) {
-                Rope(width: width)
+                FeltBoard()
+                    .frame(width: max(0, width - 28), height: max(0, height - 23))
+                    .offset(x: 14, y: 4)
 
-                if line.items.isEmpty {
+                if line.liveCount == 0 {
                     Hint()
-                        .position(x: width / 2, y: Layout.ropeY(x: width / 2, width: width) + 34)
+                        .frame(maxWidth: viewport.width)
+                        .position(x: viewport.midX, y: viewport.midY)
                         .transition(.opacity)
                 }
 
-                ForEach(Array(line.items.enumerated()), id: \.element.id) { index, item in
-                    let x = Layout.x(index: index, count: line.items.count, width: width,
-                                     visible: line.visibleCount, scroll: line.scroll)
-                    let ropeY = Layout.ropeY(x: x, width: width)
-                    PeggedView(item: item, line: line)
-                        .frame(width: Layout.cardWidth, height: Layout.panelHeight - ropeY, alignment: .top)
-                        // Photos scrolled towards an edge fade out before they reach it.
-                        .opacity(min(1, max(0, min(x, width - x) / 90)))
-                        .position(x: x, y: ropeY - Layout.pinAbove + (Layout.panelHeight - ropeY) / 2)
+                ZStack(alignment: .topLeading) {
+                    ForEach(line.items) { item in
+                        if let paper = frames[item.id] {
+                            let itemHeight = paper.height + PeggedView.cardOffsetBelowTop
+                            PeggedView(item: item, line: line)
+                                .frame(width: paper.width, height: itemHeight, alignment: .top)
+                                .position(x: paper.midX - clipViewport.minX,
+                                          y: paper.minY - clipViewport.minY - scroll
+                                            - PeggedView.cardOffsetBelowTop + itemHeight / 2)
+                        }
+                    }
+                }
+                .frame(width: clipViewport.width, height: clipViewport.height, alignment: .topLeading)
+                .clipped()
+                .offset(x: clipViewport.minX, y: clipViewport.minY)
+
+                PhoneCameraButton(camera: camera)
+                    .frame(width: cameraFrame.width, height: cameraFrame.height)
+                    .background {
+                        GeometryReader { cameraGeo in
+                            Color.clear.preference(key: CameraHitRectKey.self,
+                                                   value: cameraGeo.frame(in: .global))
+                        }
+                    }
+                    .offset(x: cameraFrame.minX, y: cameraFrame.minY)
+
+                if maximumScroll > 0, viewport.height > 0 {
+                    let thumbHeight = min(viewport.height,
+                                          max(28, viewport.height * viewport.height / (viewport.height + maximumScroll)))
+                    let thumbTop = (viewport.height - thumbHeight) * scroll / maximumScroll
+                    Capsule()
+                        .fill(ink.opacity(0.10))
+                        .frame(width: 3, height: viewport.height)
+                        .overlay(alignment: .top) {
+                            Capsule()
+                                .fill(ink.opacity(0.42))
+                                .frame(width: 3, height: thumbHeight)
+                                .offset(y: thumbTop)
+                        }
+                        .offset(x: width - 29, y: viewport.minY)
+                        .allowsHitTesting(false)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: line.items.map(\.id))
-            .animation(.easeInOut(duration: 0.3), value: line.items.isEmpty)
-            // Tucked away, the whole line waits above the top edge and slides
-            // out from under the menu bar, the way an auto-hiding Dock does.
-            .offset(y: line.revealed ? 0 : -(Layout.panelHeight + 12))
+            .animation(.easeInOut(duration: 0.3), value: line.liveCount == 0)
+            // Tucked away, the whole board waits above the top edge and
+            // slides out from under the menu bar like an auto-hiding Dock.
+            .offset(y: line.revealed ? 0 : -(height + 12))
             .animation(line.revealed ? .spring(response: 0.42, dampingFraction: 0.82)
                                      : .easeIn(duration: 0.22), value: line.revealed)
+            .onPreferenceChange(HitRectsKey.self) { rects in
+                let origin = geo.frame(in: .global).origin
+                let bounds = clipViewport.offsetBy(dx: origin.x, dy: origin.y)
+                line.hitRects = rects.reduce(into: [:]) { visible, entry in
+                    let clipped = entry.value.intersection(bounds)
+                    if !clipped.isNull && !clipped.isEmpty { visible[entry.key] = clipped }
+                }
+            }
         }
-        .onPreferenceChange(HitRectsKey.self) { rects in
-            line.hitRects = rects
+        .onPreferenceChange(CameraHitRectKey.self) { rect in
+            line.cameraHitRect = rect
         }
     }
 }
 
+@MainActor
 private struct Hint: View {
     var body: some View {
-        Text(L("Take a screenshot and it will hang here"))
+        Text("复制图片、文字、网址或文件，就会贴在这里")
             .font(.system(size: 12, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.regularMaterial, in: Capsule())
-    }
-}
-
-/// A thin, neutral line: a mid gray core with a faint highlight and a soft
-/// shadow, so it reads on light and dark backgrounds alike. It fades out at
-/// both ends so it seems to come from beyond the screen.
-struct Rope: View {
-    let width: CGFloat
-
-    private var path: Path {
-        Path { p in
-            let top = Layout.ropeTop
-            p.move(to: CGPoint(x: -20, y: top))
-            p.addQuadCurve(
-                to: CGPoint(x: width + 20, y: top),
-                control: CGPoint(x: width / 2, y: top + 2 * Layout.sag(width: width)))
-        }
-    }
-
-    var body: some View {
-        ZStack {
-            path.stroke(Color.black.opacity(0.22), lineWidth: 1.4).offset(y: 1.2).blur(radius: 1.2)
-            path.stroke(Color(white: 0.55), lineWidth: 1.2)
-            path.stroke(Color.white.opacity(0.45), lineWidth: 0.4).offset(y: -0.35)
-        }
-        .mask(
-            LinearGradient(stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .black, location: 0.08),
-                .init(color: .black, location: 0.92),
-                .init(color: .clear, location: 1),
-            ], startPoint: .leading, endPoint: .trailing)
-        )
-        .allowsHitTesting(false)
+            .foregroundStyle(Color(red: 0.36, green: 0.31, blue: 0.24))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(Color(red: 0.96, green: 0.94, blue: 0.88).opacity(0.82),
+                        in: RoundedRectangle(cornerRadius: 2))
+            .shadow(color: .black.opacity(0.10), radius: 3, x: 1, y: 2)
     }
 }
 
@@ -142,5 +215,12 @@ struct HitRectsKey: PreferenceKey {
     static var defaultValue: [UUID: CGRect] = [:]
     static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
         value.merge(nextValue()) { $1 }
+    }
+}
+
+struct CameraHitRectKey: PreferenceKey {
+    static var defaultValue: CGRect? = nil
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        if let next = nextValue() { value = next }
     }
 }

@@ -3,20 +3,21 @@ import AVFoundation
 import Combine
 import os
 
-let log = Logger(subsystem: "app.tendedero.Tendedero", category: "line")
+let log = Logger(subsystem: "local.feltboard.preview", category: "line")
 
 /// One screenshot hanging on the line.
 struct Pegged: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     var thumb: NSImage
+    var content: ClipboardContent? = nil
     /// Every photo hangs a little crooked, like on a real line.
     let tilt = Double.random(in: -2.5...2.5)
     var falling = false
     /// Still flying in from where it was captured; the card waits hidden.
     var flying = false
     /// A screen recording rather than a screenshot.
-    var isRecording: Bool { Tendedero.isRecording(url) }
+    var isRecording: Bool { content == nil && Tendedero.isRecording(url) }
 
     static func == (a: Pegged, b: Pegged) -> Bool {
         a.id == b.id && a.falling == b.falling && a.flying == b.flying && a.thumb === b.thumb
@@ -38,26 +39,19 @@ final class Line: ObservableObject {
     /// Card frames in window coordinates, reported by the views. The panel
     /// uses them to only catch clicks over photos and let the rest through.
     var hitRects: [UUID: CGRect] = [:]
+    /// Fixed camera controls also receive clicks on the otherwise transparent panel.
+    var cameraHitRect: CGRect?
 
-    var maxItems = 8
-    /// How many photos fit across the screen. With Keep on line set, the
-    /// line can hold more, and the rest are reached by scrolling.
-    var visibleCount = 8
-    /// How far the line is scrolled towards older photos, in points; 0 shows
-    /// the newest.
-    @Published var scroll: CGFloat = 0
-
-    /// Keep on line, from the menu bar: how many photos the line keeps, or
-    /// nil for as many as fit across the screen.
-    nonisolated static let keepChoices = [25, 50, 100]
-    nonisolated static var keepOnLine: Int? {
-        get {
-            let n = UserDefaults.standard.integer(forKey: "keepOnLine")
-            return keepChoices.contains(n) ? n : nil
-        }
-        set { UserDefaults.standard.set(newValue ?? 0, forKey: "keepOnLine") }
+    /// Total retained history, independent of screen width or card size.
+    nonisolated static let historyLimit = 10
+    /// Available board size; cards wrap into rows and scroll vertically.
+    var viewportWidth: CGFloat = 840
+    var viewportHeight: CGFloat = 560
+    var maximumScroll: CGFloat {
+        Layout.maximumScroll(items: items, width: viewportWidth, height: viewportHeight)
     }
-
+    /// How far down the board is scrolled towards older items; 0 shows the newest.
+    @Published var scroll: CGFloat = 0
 
     var soundOn: Bool {
         get { !UserDefaults.standard.bool(forKey: "soundOff") }
@@ -67,9 +61,12 @@ final class Line: ObservableObject {
     var liveCount: Int { items.filter { !$0.falling }.count }
 
     private let storeKey = "pegged"
+    private let defaults: UserDefaults
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         restore()
+        trim()
         scheduleGust()
     }
 
@@ -78,17 +75,11 @@ final class Line: ObservableObject {
     @discardableResult
     func hang(_ url: URL, quietly: Bool = false, flying: Bool = false) -> UUID? {
         guard !items.contains(where: { $0.url == url && !$0.falling }),
-              let thumb = makeThumbnail(url) else { return nil }
-        var item = Pegged(url: url, thumb: thumb)
+              var item = makeItem(url) else { return nil }
         item.flying = flying
         items.append(item)
         scroll = 0
-        // A full line lets the oldest photo fall off the far end. Only one: a
-        // line hung on a wider screen keeps its length here instead of losing
-        // several photos to a single capture.
-        if liveCount > maxItems, let oldest = items.first(where: { !$0.falling }) {
-            letGo(oldest.id)
-        }
+        trim()
         save()
         if !quietly { play("Tink", volume: 0.35) }
         return item.id
@@ -100,8 +91,8 @@ final class Line: ObservableObject {
         items[i].flying = false
     }
 
-    /// Called just before a photo starts falling, so the fall can be drawn
-    /// over the whole screen.
+    /// Called just before a card starts crumpling, so the discard can be
+    /// drawn over the whole screen while the live card leaves the layout.
     var onFall: ((Pegged) -> Void)?
 
     func drop(_ id: UUID, quietly: Bool = false) {
@@ -111,7 +102,7 @@ final class Line: ObservableObject {
         hitRects[id] = nil
         save()
         if !quietly { play("Pop", volume: 0.25) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + CrumpleDiscard.cleanupDelay) { [weak self] in
             self?.items.removeAll { $0.id == id }
         }
     }
@@ -121,7 +112,8 @@ final class Line: ObservableObject {
         takeDown(items.filter { !$0.falling })
     }
 
-    /// The photos hung before (left) or after (right) this one.
+    /// The older or newer entries relative to this item. The original
+    /// internal flag remains: true selects older entries, false selects newer.
     func neighbours(of id: UUID, toTheLeft: Bool) -> [Pegged] {
         let live = items.filter { !$0.falling }
         guard let i = live.firstIndex(where: { $0.id == id }) else { return [] }
@@ -153,15 +145,12 @@ final class Line: ObservableObject {
 
     // MARK: Actions on one photo
 
-    func copy(_ id: UUID) {
+    func copy(_ id: UUID, to pb: NSPasteboard = .general) {
         guard let item = items.first(where: { $0.id == id }) else { return }
-        let entry = NSPasteboardItem()
-        // A recording is copied as the file, which apps paste as the video.
-        if !item.isRecording, let png = pngData(item.url) { entry.setData(png, forType: .png) }
-        entry.setString(item.url.absoluteString, forType: .fileURL)
-        let pb = NSPasteboard.general
+        let entries = item.pasteboardItems()
+        guard !entries.isEmpty else { return }
         pb.clearContents()
-        pb.writeObjects([entry])
+        guard pb.writeObjects(entries) else { return }
 
         copiedID = id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
@@ -171,6 +160,12 @@ final class Line: ObservableObject {
 
     func open(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
+        if let content = item.content {
+            if content.kind == .text { ContentPreview.shared.show(content.text); return }
+            guard let url = content.urls.first else { return }
+            NSWorkspace.shared.open(url)
+            return
+        }
         NSWorkspace.shared.open(item.url)
     }
 
@@ -180,6 +175,12 @@ final class Line: ObservableObject {
     @discardableResult
     func trash(_ id: UUID, quietly: Bool = false) -> Bool {
         guard let item = items.first(where: { $0.id == id }) else { return false }
+        // A file card owns its small record, never the user's source files.
+        if item.content != nil {
+            removeContentRecord(item)
+            drop(id, quietly: quietly)
+            return true
+        }
         do {
             try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
             log.notice("Trashed \(item.url.lastPathComponent, privacy: .public)")
@@ -215,15 +216,14 @@ final class Line: ObservableObject {
     /// of that folder. If the Trash refuses it, it still leaves the line.
     /// Moves along a line that holds more than fit, from a scroll gesture.
     func scroll(by delta: CGFloat) {
-        let most = CGFloat(max(0, items.count - visibleCount)) * Layout.spacing
+        let most = maximumScroll
         let next = min(most, max(0, scroll + delta))
         if next != scroll { scroll = next }
     }
 
-    /// After Keep on line is lowered, the oldest photos past it go the way
-    /// of a full line.
+    /// Keep the newest ten entries, including when restoring older history.
     func trim() {
-        while liveCount > maxItems, let oldest = items.first(where: { !$0.falling }) {
+        while liveCount > Self.historyLimit, let oldest = items.first(where: { !$0.falling }) {
             letGo(oldest.id)
         }
         scroll = 0
@@ -236,7 +236,7 @@ final class Line: ObservableObject {
 
     /// Inbox mode: keep a screenshot by moving it to the Desktop.
     func saveToDesktop(_ id: UUID) {
-        guard let item = items.first(where: { $0.id == id }) else { return }
+        guard let item = items.first(where: { $0.id == id }), item.content == nil else { return }
         let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
         let target = uniqueURL(in: desktop, for: item.url.lastPathComponent)
         do {
@@ -264,6 +264,7 @@ final class Line: ObservableObject {
     /// not edit video, so a recording opens in the trimming editor instead.
     func markup(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
+        if item.content != nil { quickLook(id); return }
         if item.isRecording {
             Trim.shared.edit(item.url, size: item.thumb.size)
         } else {
@@ -273,27 +274,37 @@ final class Line: ObservableObject {
 
     /// After editing, the photo on the line shows the new version.
     func reloadThumbnail(for url: URL) {
-        guard let i = items.firstIndex(where: { $0.url == url && !$0.falling }),
+        guard let i = items.firstIndex(where: { $0.url == url && !$0.falling && $0.content == nil }),
               let thumb = makeThumbnail(url) else { return }
         items[i].thumb = thumb
     }
 
     /// Quick Look on this photo, with the rest of the line a key press away.
     func quickLook(_ id: UUID) {
-        let live = items.filter { !$0.falling }
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        if let content = item.content {
+            if content.kind == .files { QuickLook.shared.show(content.urls, at: 0) }
+            else { ContentPreview.shared.show(content.text) }
+            return
+        }
+        let live = Array(items.reversed().filter { !$0.falling && $0.content == nil })
         guard let index = live.firstIndex(where: { $0.id == id }) else { return }
         QuickLook.shared.show(live.map(\.url), at: index)
     }
 
     /// After a change of size, every photo is redrawn sharp at the new one.
     func reloadThumbnails() {
-        for i in items.indices where !items[i].falling {
+        for i in items.indices where !items[i].falling && items[i].content == nil {
             if let thumb = makeThumbnail(items[i].url) { items[i].thumb = thumb }
         }
     }
 
     func reveal(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
+        if let content = item.content {
+            if content.kind == .files { NSWorkspace.shared.activateFileViewerSelecting(content.urls) }
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
@@ -313,18 +324,16 @@ final class Line: ObservableObject {
 
     private func save() {
         let paths = items.filter { !$0.falling }.map(\.url.path)
-        UserDefaults.standard.set(paths, forKey: storeKey)
+        defaults.set(paths, forKey: storeKey)
     }
 
-    /// Everything comes back as it was. This runs before the line knows its
-    /// screen, so the capacity is still the default one: hanging through
-    /// `hang` would let photos fall off a wide screen's line at every launch.
+    /// Restore in capture order; init trims older entries to the fixed limit.
     private func restore() {
-        let paths = UserDefaults.standard.stringArray(forKey: storeKey) ?? []
+        let paths = defaults.stringArray(forKey: storeKey) ?? []
         for path in paths where FileManager.default.fileExists(atPath: path) {
             let url = URL(fileURLWithPath: path)
-            guard !items.contains(where: { $0.url == url }), let thumb = makeThumbnail(url) else { continue }
-            items.append(Pegged(url: url, thumb: thumb))
+            guard !items.contains(where: { $0.url == url }), let item = makeItem(url) else { continue }
+            items.append(item)
         }
     }
 
@@ -336,11 +345,25 @@ final class Line: ObservableObject {
         sound.play()
     }
 
-    private func pngData(_ url: URL) -> Data? {
-        if url.pathExtension.lowercased() == "png" { return try? Data(contentsOf: url) }
-        guard let tiff = NSImage(contentsOf: url)?.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
+    private func makeItem(_ url: URL) -> Pegged? {
+        if url.pathExtension == ClipboardContent.extensionName {
+            guard let content = ClipboardContent.load(from: url) else { return nil }
+            return Pegged(url: url, thumb: content.boardThumbnail(), content: content)
+        }
+        guard let thumb = makeThumbnail(url) else { return nil }
+        return Pegged(url: url, thumb: thumb)
+    }
+
+    private func removeContentRecord(_ item: Pegged) {
+        let folder = Inbox.folder.standardizedFileURL
+        guard item.url.standardizedFileURL.deletingLastPathComponent() == folder else { return }
+        if let attachment = item.content?.ownedAttachmentDirectory?.standardizedFileURL,
+           attachment.deletingLastPathComponent() == folder,
+           attachment.lastPathComponent.hasPrefix("Attachments-"),
+           attachment != folder, attachment != item.url.standardizedFileURL {
+            try? FileManager.default.removeItem(at: attachment)
+        }
+        try? FileManager.default.removeItem(at: item.url)
     }
 }
 
